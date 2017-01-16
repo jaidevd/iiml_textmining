@@ -1,6 +1,7 @@
 """.."""
 
-from bs4 import BeautifulSoup as Bs
+from __future__ import print_function
+from bs4 import BeautifulSoup as bs
 import requests
 import traceback
 import json
@@ -14,7 +15,7 @@ def json2df(fname, year):
         orgData = json.load(f_in)
     cleanTitles = {}
     pattern = "[0-9]+\."
-    for k, v in orgData.iteritems():
+    for k, v in orgData.items():
         title = re.sub(pattern, "", k.lstrip().rstrip())
         cleanTitles[title.lstrip().rstrip()] = v
     df = pd.DataFrame(index=cleanTitles.keys())
@@ -22,7 +23,7 @@ def json2df(fname, year):
         df[key] = ""
     for ix, rowData in df.iterrows():
         propData = cleanTitles[ix]
-        for k, v in propData.iteritems():
+        for k, v in propData.items():
             if k != "comments":
                 rowData.loc[k] = v
     df.columns = [c.lower().replace(" ", "_").replace(":", "") for c in df]
@@ -38,94 +39,65 @@ def json2df(fname, year):
     return df
 
 
-class Scrape:
-    """.."""
+def make_request(url):
+    """Make an HTTP GET request and return data in beautiful soup.
 
-    def __init__(self, proposal_url):
-        """Intializing varibales."""
-        self.proposal_url = proposal_url
-        self.base_url = 'https://in.pycon.org'
-        self.result = {}
-        self.headers = {}
+    :param url: URL to be scraped.
+    """
+    headers = {}
+    headers['User-Agent'] = ("Mozilla/5.0 (Macintosh; Intel Mac"
+                             " OS X 10_11_5) AppleWebKit/537.36"
+                             "(KHTML, like Gecko) Chrome/51.0."
+                             "2704.103 Safari/537.36")
+    r = requests.get(url, headers=headers)
+    return bs(r.text)
 
-    def make_request(self, url):
-        """Making request to get html page of given url.
 
-        :params url
-        Return
-            BeautifulSoup object or None
-        """
-        try:
-            self.headers['User-Agent'] = ("Mozilla/5.0 (Macintosh; Intel Mac"
-                                          " OS X 10_11_5) AppleWebKit/537.36"
-                                          "(KHTML, like Gecko) Chrome/51.0."
-                                          "2704.103 Safari/537.36")
-            r = requests.get(url, headers=self.headers)
-            if r.ok:
-                return Bs(r.text)
-        except:
-            print traceback.format_exc()
-        return None
-
-    def start(self):
-        """Call to start scraping in.pycon.org proposals.
-
-        Return
-            dict of proposals.
-        """
-        soup = self.make_request(self.proposal_url)
+def scrape(url, base_url="https://in.pycon.org"):
+    result = {}
+    soup = make_request(url)
+    soup_proposals = soup.findAll(
+        'div', attrs={'class': 'row user-proposals'})
+    for proposal in soup_proposals:
+        p = proposal.find('h3', attrs={'class': 'proposal--title'})
+        title, url = p.text, "".join([base_url,
+                                      p.find('a').get('href', '')])
+        soup = make_request(url)
         if not soup:
-            return
-        soup_proposals = soup.findAll(
-            'div', attrs={'class': 'row user-proposals'})
-        for proposal in soup_proposals:
-            p = proposal.find('h3', attrs={'class': 'proposal--title'})
-            title, url = p.text, "".join([self.base_url,
-                                          p.find('a').get('href', '')])
-            soup = self.make_request(url)
-            if not soup:
-                continue
-            soup_proposal = soup.findAll(
-                'div', attrs={'class': 'proposal-writeup--section'})
-            temp = {}
-            for data in soup_proposal:
-                try:
-                    temp[data.find('h4').text] = "".join(
-                        [ptag.text for ptag in data.findAll('p')])
-                except:
-                    print traceback.format_exc()
-            temp['comments'] = []
-            for comment in soup.findAll("div", attrs={'class': 'comment-description'}):
-                text = comment.find("span")
-                if text:
-                    temp['comments'].append(dict(
-                        text=text.text.strip(),
-                        by=comment.find('b').text.strip(),
-                        time=comment.find('small').text.strip()))
-            talk_details = soup.findAll('tr')
-            for section in talk_details:
-                row = section.findAll('td')
-                temp[row[0].text] = row[1].text
+            continue
+        soup_proposal = soup.findAll(
+            'div', attrs={'class': 'proposal-writeup--section'})
+        temp = {}
+        for data in soup_proposal:
             try:
-                vCount = soup.findAll('h1', attrs={'class': 'vote-count'})[0]
-                temp["n_votes"] = int(vCount.text.lstrip().rstrip())
-            except IndexError:
-                from IPython.core.debugger import Tracer
-                Tracer()()
-            self.result[title] = temp
-
-        # from pprint import pprint
-        # # Printing data
-        # pprint(self.result)
-        return self.result
+                temp[data.find('h4').text] = "".join(
+                    [ptag.text for ptag in data.findAll('p')])
+            except:
+                print(traceback.format_exc())
+        temp['comments'] = []
+        for comment in soup.findAll("div", attrs={'class': 'comment-description'}):
+            text = comment.find("span")
+            if text:
+                temp['comments'].append(dict(
+                    text=text.text.strip(),
+                    by=comment.find('b').text.strip(),
+                    time=comment.find('small').text.strip()))
+        talk_details = soup.findAll('tr')
+        for section in talk_details:
+            row = section.findAll('td')
+            temp[row[0].text] = row[1].text
+        vCount = soup.findAll('h1', attrs={'class': 'vote-count'})[0]
+        temp["n_votes"] = int(vCount.text.lstrip().rstrip())
+        result[title] = temp
+        return result
 
 if __name__ == '__main__':
     cfp_2015_url = "https://in.pycon.org/cfp/pycon-india-2015/proposals/"
     cfp_2016_url = "https://in.pycon.org/cfp/2016/proposals/"
-    results = Scrape(cfp_2015_url).start()
+    results = scrape(cfp_2015_url)
     with open("cfp2015.json", "w") as f_out:
         json.dump(results, f_out)
-    results = Scrape(cfp_2016_url).start()
+    results = scrape(cfp_2016_url)
     with open("cfp2016.json", "w") as f_out:
         json.dump(results, f_out)
     df1 = json2df("cfp2015.json", 2015)
