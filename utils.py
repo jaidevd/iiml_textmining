@@ -15,15 +15,8 @@ Utilities for running the sentinel code
 """
 
 import string
-from nltk.corpus import stopwords
+from sklearn.feature_extraction.stop_words import ENGLISH_STOP_WORDS
 
-
-try:
-    stops = stopwords.words('english')
-except LookupError:
-    import nltk
-    nltk.download('stopwords')
-    stops = stopwords.words('english')
 
 make_lowercase = lambda x: x.lower()
 remove_unicode = lambda x: x.encode('ascii', 'ignore').decode('utf-8')
@@ -52,7 +45,7 @@ def remove_stopwords(x):
     foolishness.
     """
     words = x.split(" ")
-    return " ".join([w for w in words if w not in stops])
+    return " ".join([w for w in words if w not in ENGLISH_STOP_WORDS])
 
 
 def remove_digits(x):
